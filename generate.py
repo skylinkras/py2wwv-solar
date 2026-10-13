@@ -1,5 +1,5 @@
 
-"""PY2WWV Solar Dashboard - NOAA/SWPC."""
+"""PY2WWV Solar Dashboard - NOAA/SWPC observations."""
 
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,7 +37,7 @@ def get(url):
     r = requests.get(
         url,
         timeout=20,
-        headers={"User-Agent": "PY2WWV-Solar-Dashboard/3.0"}
+        headers={"User-Agent": "PY2WWV-Solar-Dashboard/3.1"}
     )
     r.raise_for_status()
     return r.json() if url.endswith(".json") else r.text
@@ -62,6 +62,7 @@ def display(value):
 
 
 def monthly_ssn():
+    """Most recent available monthly sunspot number."""
     try:
         rows = get(CYCLE_URL)
         for row in reversed(rows):
@@ -75,7 +76,12 @@ def monthly_ssn():
 
 
 def read_wwv():
-    values = {"SFI": None, "A INDEX": None, "Kp INDEX": None}
+    """Read official NOAA WWV geophysical bulletin."""
+    values = {
+        "SFI": None,
+        "A INDEX": None,
+        "Kp INDEX": None
+    }
 
     try:
         bulletin = get(WWV_URL)
@@ -102,6 +108,7 @@ def read_wwv():
 
 
 def read_kp():
+    """Read the latest available planetary Kp index."""
     try:
         rows = get(KP_URL)
 
@@ -133,27 +140,40 @@ def metrics():
         values["Kp INDEX"] = kp
 
     values["SSN"] = monthly_ssn()
+
+    print("Final solar metrics:", values)
     return values
 
 
 def condition(name, value):
+    """
+    HF operational color classification.
+
+    SFI: higher generally favors higher HF bands.
+    A/Kp: lower indicates quieter geomagnetic conditions.
+    SSN: higher indicates greater solar activity.
+    """
+
     if value is None:
         return MUTED, "NO DATA", "DATA UNAVAILABLE"
 
+    # SOLAR FLUX INDEX
     if name == "SFI":
+        if value >= 180:
+            return GREEN, "HIGH", "HIGH SOLAR FLUX"
         if value >= 120:
-            return GREEN, "GOOD", "BETTER HF POTENTIAL"
-        if value >= 90:
-            return YELLOW, "MODERATE", "FAIR HF POTENTIAL"
+            return YELLOW, "MODERATE", "MODERATE SOLAR FLUX"
         return RED, "LOW", "LOW SOLAR FLUX"
 
+    # PLANETARY A INDEX
     if name == "A INDEX":
-        if value <= 7:
+        if value < 7:
             return GREEN, "QUIET", "FAVORABLE CONDITIONS"
-        if value <= 15:
-            return YELLOW, "MODERATE", "UNSETTLED CONDITIONS"
+        if value <= 20:
+            return YELLOW, "UNSETTLED", "VARIABLE CONDITIONS"
         return RED, "DISTURBED", "GEOMAGNETIC ACTIVITY"
 
+    # PLANETARY Kp INDEX
     if name == "Kp INDEX":
         if value < 3:
             return GREEN, "QUIET", "FAVORABLE CONDITIONS"
@@ -161,6 +181,7 @@ def condition(name, value):
             return YELLOW, "UNSETTLED", "VARIABLE CONDITIONS"
         return RED, "STORM", "GEOMAGNETIC STORM"
 
+    # SUNSPOT NUMBER
     if name == "SSN":
         if value >= 100:
             return GREEN, "HIGH", "HIGH SOLAR ACTIVITY"
@@ -173,6 +194,7 @@ def condition(name, value):
 
 def centered(draw, text, box, fnt, fill):
     left, top, right, bottom = box
+
     bounds = draw.textbbox((0, 0), text, font=fnt)
     tw = bounds[2] - bounds[0]
     th = bounds[3] - bounds[1]
@@ -190,10 +212,15 @@ def main():
     im = Image.new("RGB", (w, h), (7, 21, 34))
     d = ImageDraw.Draw(im)
 
+    # Dark navy background gradient
     for y in range(h):
         shade = int(y / h * 13)
-        d.line((0, y, w, y), fill=(7, 21 + shade, 34 + shade))
+        d.line(
+            (0, y, w, y),
+            fill=(7, 21 + shade, 34 + shade)
+        )
 
+    # Header
     d.text(
         (48, 23),
         "05 / LIVE PROPAGATION CONDITIONS",
@@ -217,13 +244,7 @@ def main():
 
     names = ["SFI", "A INDEX", "Kp INDEX", "SSN"]
 
-    subtitles = [
-        "SOLAR FLUX INDEX",
-        "PLANETARY A-INDEX",
-        "PLANETARY K-INDEX",
-        "SUNSPOT NUMBER"
-    ]
-
+    # Four original metric cards
     for i, name in enumerate(names):
         x = 48 + i * 279
         y = 174
@@ -253,6 +274,7 @@ def main():
             fill=color
         )
 
+        # Automatic colored condition label
         d.rounded_rectangle(
             (x + 14, y + 109, x + 245, y + 140),
             radius=6,
@@ -275,6 +297,7 @@ def main():
             MUTED
         )
 
+    # NOAA source and UTC timestamp
     stamp = datetime.now(timezone.utc).strftime(
         "%Y-%m-%d %H:%M UTC"
     )
